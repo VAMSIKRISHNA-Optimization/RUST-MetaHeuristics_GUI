@@ -15,67 +15,57 @@ use rand::Rng;
 use std::fmt::Debug;
 
 #[derive(Debug, Clone)]
-pub struct PSO_HyperParameters 
+pub struct SGO_HyperParameters 
 {
-    Inertia_Weight          : f64,
-    Cognitive_Coefficient   : f64,
-    Social_Coefficient      : f64,
-    Kinetic_Energy          : f64,
+    Self_Instrospection_Factor : f64,
 }
 
-impl PSO_HyperParameters 
+impl SGO_HyperParameters 
 {
-    pub fn new(Inertia_Weight: f64, Cognitive_Coefficient: f64, Social_Coefficient: f64, Kinetic_Energy: f64) -> Self 
+    pub fn new(Self_Instrospection_Factor: f64) -> Self 
     {
         Self 
         {
-            Inertia_Weight,
-            Cognitive_Coefficient,
-            Social_Coefficient,
-            Kinetic_Energy,
+            Self_Instrospection_Factor,
         }
     }
 }
 
-impl Default for PSO_HyperParameters 
+impl Default for SGO_HyperParameters 
 {
     fn default() -> Self 
     {
-        // Clerc Constriction values (2002)
+        // Suresh Satapathy & Anima Naik, 2016
         Self 
         {
-            Inertia_Weight          : 0.72980,
-            Cognitive_Coefficient   : 1.49618,
-            Social_Coefficient      : 1.49618,
-            Kinetic_Energy          : 0.5,
+            Self_Instrospection_Factor  : 0.2,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct PSO<T: Debug> 
+pub struct SGO<T: Debug> 
 {
-    PSO_Status: AlgorithmStatus,
+    SGO_Status: AlgorithmStatus,
     CustomName: CustomName<T>,
 
     Basic_Tuning_Parameters: BasicTuningParameters,
 
-    HyperParameters     : PSO_HyperParameters,
+    HyperParameters     : SGO_HyperParameters,
     Bounding_Strategy   : BoundingStrategy,
 
     Population      : Array2<f64>,
     Fitness_Scores  : Array1<f64>,
-    pBest_Solution  : Array2<f64>,
-    pBest_Score     : Array1<f64>,
+
     gBest_Solution  : Array1<f64>,
     gBest_Score     : f64,
-    Velocities      : Array2<f64>,
+
 
     lb: Array1<f64>,
     ub: Array1<f64>,
 
-    Swarm_Size: usize,
-    Dimensions: usize,
+    Population_Size : usize,
+    Dimensions      : usize,
 
     Total_Iterations    : usize,
     Current_Iteration   : usize,
@@ -84,7 +74,7 @@ pub struct PSO<T: Debug>
     Total_Function_Evaluations  : usize,
 }
 
-impl<T: Debug> PSO<T> 
+impl<T: Debug> SGO<T> 
 {
     pub fn new
     (
@@ -93,41 +83,35 @@ impl<T: Debug> PSO<T>
         D: usize,
         NFEs: usize,
         CustomName: T,
-        Inertia_Weight: f64,
-        Cognitive_Coefficient: f64,
-        Social_Coefficient: f64,
-        Kinetic_Energy: f64,
+        Self_Instrospection_Factor: f64,
         Bounding_Strategy: BoundingStrategy,
     ) -> Self 
     {
         Self 
         {
-            PSO_Status              : AlgorithmStatus::Not_Initialized,
+            SGO_Status              : AlgorithmStatus::Not_Initialized,
             Basic_Tuning_Parameters : BasicTuningParameters::new(Np, Ite, NFEs),
             CustomName              : CustomName::new(CustomName),
-            HyperParameters         : PSO_HyperParameters::new
+            HyperParameters         : SGO_HyperParameters::new
             (
-                Inertia_Weight,
-                Cognitive_Coefficient,
-                Social_Coefficient,
-                Kinetic_Energy,
+                Self_Instrospection_Factor,
             ),
             Bounding_Strategy       : Bounding_Strategy,
             
             Population      : Array2::from_elem((Np, D), f64::INFINITY),
             Fitness_Scores  : Array1::from_elem(Np, f64::INFINITY),
-            pBest_Solution  : Array2::from_elem((Np, D), f64::INFINITY),
-            pBest_Score     : Array1::from_elem(Np, f64::INFINITY),
+
             gBest_Solution  : Array1::from_elem(D, f64::INFINITY),
             gBest_Score     : f64::INFINITY,
-            Velocities      : Array2::zeros((Np, D)),
+
             
             lb: Array1::from_elem(D, f64::NEG_INFINITY),
             ub: Array1::from_elem(D, f64::INFINITY),
 
-            Swarm_Size: Np,
-            Dimensions: D,
-            Total_Iterations: Ite,
+            Population_Size : Np,
+            Dimensions      : D,
+
+            Total_Iterations    : Ite,
             Current_Iteration   : 0,
             Function_Evaluations: 0,
             Total_Function_Evaluations: NFEs,
@@ -135,25 +119,26 @@ impl<T: Debug> PSO<T>
     }
 }
 
-impl<T: Debug> Initalize for PSO<T> 
+
+impl<T: Debug> Initalize for SGO<T> 
 {
     fn initialize(&mut self, Np: usize, Dim: usize, lb: &[f64], ub: &[f64]) 
     {
         assert_eq!(lb.len(), Dim, "Length of lb must match Dimensions");
         assert_eq!(ub.len(), Dim, "Length of ub must match Dimensions");
 
-        self.Swarm_Size = Np;
-        self.Dimensions = Dim;
+        self.Population_Size = Np;
+        self.Dimensions      = Dim;
+
         self.lb = Array1::from_vec(lb.to_vec());
         self.ub = Array1::from_vec(ub.to_vec());
 
         self.Population     = Array2::from_elem((Np, Dim), f64::INFINITY);
         self.Fitness_Scores = Array1::from_elem(Np, f64::INFINITY);
-        self.pBest_Solution = Array2::from_elem((Np, Dim), f64::INFINITY);
-        self.pBest_Score    = Array1::from_elem(Np, f64::INFINITY);
+
         self.gBest_Solution = Array1::from_elem(Dim, f64::INFINITY);
         self.gBest_Score    = f64::INFINITY;
-        self.Velocities     = Array2::zeros((Np, Dim));
+
 
         let mut rng = rand::thread_rng();
 
@@ -165,16 +150,6 @@ impl<T: Debug> Initalize for PSO<T>
                 let val = rng.gen_range(self.lb[d]..=self.ub[d]);
                 self.Population[[p, d]]      = val;
                 self.pBest_Solution[[p, d]]  = val;
-            }
-        }
-
-        // Half-Difference Randomization for velocity initialization
-        for p in 0..Np 
-        {
-            for d in 0..Dim 
-            {
-                self.Velocities[[p, d]] =
-                    (rng.gen_range(0.0..=1.0) - 0.5) * (self.ub[d] - self.lb[d]);
             }
         }
 
@@ -191,11 +166,12 @@ impl<T: Debug> Initalize for PSO<T>
     }
 }
 
-impl<T: Debug> Bounding for PSO<T> 
+
+impl<T: Debug> Bounding for SGO<T> 
 {
     fn bound_clamp(&mut self) 
     {
-        for p in 0..self.Swarm_Size 
+        for p in 0..self.Population_Size 
         {
             for d in 0..self.Dimensions 
             {
@@ -213,7 +189,8 @@ impl<T: Debug> Bounding for PSO<T>
 
     fn bound_reflect(&mut self, damping_factor: f64) 
     {
-        for p in 0..self.Swarm_Size 
+        
+        for p in 0..self.Population_Size 
         {
             for d in 0..self.Dimensions 
             {
@@ -233,7 +210,7 @@ impl<T: Debug> Bounding for PSO<T>
 
     fn bound_wrap(&mut self, overshoot_factor: f64) 
     {
-        for p in 0..self.Swarm_Size 
+        for p in 0..self.Population_Size 
         {
             for d in 0..self.Dimensions 
             {
@@ -255,7 +232,7 @@ impl<T: Debug> Bounding for PSO<T>
     fn bound_reinitalize(&mut self) 
     {
         let mut rng = rand::thread_rng();
-        for p in 0..self.Swarm_Size 
+        for p in 0..self.Population_Size 
         {
             for d in 0..self.Dimensions 
             {
@@ -269,7 +246,8 @@ impl<T: Debug> Bounding for PSO<T>
     }
 }
 
-impl<T: Debug> FitnessEvaluation for PSO<T> {
+
+impl<T: Debug> FitnessEvaluation for SGO<T> {
     fn evaluate_fitness_single_population(&mut self, &dyn Problem) 
     {
         for i in 0..self.Swarm_Size 
@@ -281,11 +259,11 @@ impl<T: Debug> FitnessEvaluation for PSO<T> {
             let fitness = problem.evaluate(slice);
             self.Fitness_Scores[i] = fitness;
 
-            // Update pBest
-            if fitness < self.pBest_Score[i] 
+            // Greedy selection
+            if fitness < self.Fitness_Scores[i]
             {
-                self.pBest_Score[i] = fitness;
-                self.pBest_Solution
+                self.Fitness_Scores[i] = fitness;
+                self.Population
                     .row_mut(i)
                     .assign(&self.Population.row(i));
             }
@@ -330,43 +308,32 @@ impl<T: Debug> FitnessEvaluation for PSO<T> {
     }
 }
 
-impl<T: Debug> Optimize for PSO<T> 
+impl<T: Debug> Optimize for SGO<T> 
 {
     fn step(&mut self, problem: &dyn Problem) 
     {
         let mut rng = rand::thread_rng();
 
-        // Update velocities and positions
-        for p in 0..self.Swarm_Size 
+        // Get the gbest 
+        if self.Current_Iteration == 0
+        {
+            self.evaluate_fitness(problem);
+            self.Function_Evaluations += self.Population_Size;
+        }
+        
+
+        // 1. IMPROVING PHASE
+        for p in 0..self.Population_Size 
         {
             for d in 0..self.Dimensions 
             {
                 let r1: f64 = rng.r#gen();
-                let r2: f64 = rng.r#gen();
 
-                let current_vel = self.Velocities[[p, d]];
-                let pos         = self.Population[[p, d]];
-                let pbest_pos   = self.pBest_Solution[[p, d]];
-                let gbest_pos   = self.gBest_Solution[[p, d]];
+                let current_member = self.Population[[p, d]];
+                let gbest_member   = self.gBest_Solution[d];
 
-                let mut new_vel = self.HyperParameters.Inertia_Weight * current_vel
-                                + self.HyperParameters.Cognitive_Coefficient * r1 * (pbest_pos - pos)
-                                + self.HyperParameters.Social_Coefficient * r2 * (gbest_pos - pos);
-
-                // Velocity Clamping
-                let max_vel = self.HyperParameters.Kinetic_Energy * (self.ub[d] - self.lb[d]);
-                let min_vel = -max_vel;
-
-                if new_vel > max_vel 
-                {
-                    new_vel = max_vel;
-                } else if new_vel < min_vel 
-                {
-                    new_vel = min_vel;
-                }
-
-                self.Velocities[[p, d]] = new_vel;
-                self.Population[[p, d]] += new_vel;
+                let new_vel = self.HyperParameters.Self_Instrospection_Factor * current_member
+                            + r1  (gbest_member - current_member);
             }
         }
 
@@ -382,10 +349,57 @@ impl<T: Debug> Optimize for PSO<T>
 
         // Evaluate updated fitness
         self.evaluate_fitness(problem);
+        self.Function_Evaluations += self.Population_Size;
+
+        // 2. ACQUIRING PHASE
+        for p in 0..self.Population_Size 
+        {
+            let mut pr1 = rng.gen_range(0..self.Population_Size);
+            while pr1 == p { pr1 = rng.gen_range(0..self.Population_Size); }
+
+            let x_r1 = self.population.row(pr1);
+
+            for d in 0..self.Dimensions 
+            {
+                let r1: f64 = rng.r#gen();
+                let r2: f64 = rng.r#gen();
+
+                let current_member = self.Population[[p, d]];
+                let gbest_member   = self.gBest_Solution[d];
+                let rand_member    = x_r1[d];
+                
+                if self.Fitness_Scores[p] < self.Fitness_Scores[pr1]
+                {
+                    let new_vel = current_member
+                                + r1  (current_member - rand_member)
+                                + r2  (gbest_member - current_member);
+                }
+                else 
+                {
+                    let new_vel = current_member
+                                + r1  (rand_member - current_member)
+                                + r2  (gbest_member - current_member);
+                }
+
+            }
+        }
+
+        // Apply selected Bounding Strategy
+        match self.Bounding_Strategy 
+        {
+            BoundingStrategy::Clamping          => self.bound_clamp(),
+            BoundingStrategy::Reflecting        => self.bound_reflect(0.5),
+            BoundingStrategy::Wrapping          => self.bound_wrap(1.0),
+            BoundingStrategy::ReInitialization  => self.bound_reinitalize(),
+            _ => self.bound_clamp(),
+        }
+
+        // Evaluate updated fitness
+        self.evaluate_fitness(problem);
+        self.Function_Evaluations += self.Population_Size;
+
 
         self.Current_Iteration    += 1;
-        self.Function_Evaluations += self.Swarm_Size;
-
         if self.Current_Iteration >= self.Total_Iterations 
         {
             self.PSO_Status = AlgorithmStatus::Completed;
