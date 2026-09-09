@@ -1,0 +1,14 @@
+[package]
+name = "MetaHeuristics_GUI"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe      = "0.28"
+egui_plot   = "0.28"
+
+ndarray = "0.15"  # Fast N-dimensional array processing
+rand    = "0.8"   # Random number generation
+
+[build-dependencies]
+cc = "1.0"
