@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use crate::core::problem::Problem;
 
 #[derive(Debug)]
 pub struct BasicTuningParameters
@@ -106,17 +107,25 @@ pub trait Initalize
 
 pub trait FitnessEvaluation
 {
-    fn evaluate_fitness_single_population(&mut self, &dyn Problem);
-    fn evaluate_fitness_entire_population(&mut self, &dyn Problem);
+    fn evaluate_fitness_entire_population_one_by_one(&mut self, problem: &dyn Problem);
+    fn evaluate_fitness_entire_population_all_at_once(&mut self, problem: &dyn Problem);
+
+    fn get_population_member_by_index(&self, pop_index: usize) -> &[f64];
+    fn evaluate_single_population_member(&self, problem: &dyn Problem, pop_index: usize) -> f64
+    {
+        problem.evaluate(self.get_population_member_by_index(pop_index))
+    }
+
+   
     fn get_best_solution(&self) -> &[f64];
     fn get_best_score(&self) -> f64;
 }
 
 
-pub trait Optimize: Initalize +  Bounding + FitnessEvaluation
+pub trait Optimize: Initalize + Bounding + FitnessEvaluation
 {
-    fn step(&mut self, problem: &dyn Problem); // Intented to perform one iteration at a time, and update the GUI accordingly.
-    fn optimize(&mut self, ObjFn: fn(&[f64])->f64 );
+    fn step(&mut self,     problem: &dyn Problem); // Intented to perform one iteration at a time, and update the GUI accordingly.
+    fn optimize(&mut self, problem: &dyn Problem); // Intended to run the entire optimization process in one go, without GUI updates.);
 
     // Getters
     fn is_running(&self) -> bool;

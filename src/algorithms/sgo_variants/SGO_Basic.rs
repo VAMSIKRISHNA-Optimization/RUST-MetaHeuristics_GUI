@@ -60,6 +60,7 @@ pub struct SGO<T: Debug>
     gBest_Solution  : Array1<f64>,
     gBest_Score     : f64,
 
+    New_Solution : Array1<f64>,
 
     lb: Array1<f64>,
     ub: Array1<f64>,
@@ -80,11 +81,11 @@ impl<T: Debug> SGO<T>
     (
         Np: usize,
         Ite: usize,
-        D: usize,
         NFEs: usize,
         CustomName: T,
         Self_Instrospection_Factor: f64,
         Bounding_Strategy: BoundingStrategy,
+        Optimization_Problem: &dyn Problem,
     ) -> Self 
     {
         Self 
@@ -98,18 +99,19 @@ impl<T: Debug> SGO<T>
             ),
             Bounding_Strategy       : Bounding_Strategy,
             
-            Population      : Array2::from_elem((Np, D), f64::INFINITY),
+            Population      : Array2::from_elem((Np, Optimization_Problem.dimensions()), f64::INFINITY),
             Fitness_Scores  : Array1::from_elem(Np, f64::INFINITY),
 
-            gBest_Solution  : Array1::from_elem(D, f64::INFINITY),
+            gBest_Solution  : Array1::from_elem(Optimization_Problem.dimensions(), f64::INFINITY),
             gBest_Score     : f64::INFINITY,
 
-            
-            lb: Array1::from_elem(D, f64::NEG_INFINITY),
-            ub: Array1::from_elem(D, f64::INFINITY),
+            New_Solution : Array1::from_elem(Optimization_Problem.dimensions(), f64::INFINITY),
+
+            lb: Array1::from_elem(Optimization_Problem.dimensions(), f64::NEG_INFINITY),
+            ub: Array1::from_elem(Optimization_Problem.dimensions(), f64::INFINITY),
 
             Population_Size : Np,
-            Dimensions      : D,
+            Dimensions      : Optimization_Problem.dimensions(),
 
             Total_Iterations    : Ite,
             Current_Iteration   : 0,
@@ -149,11 +151,10 @@ impl<T: Debug> Initalize for SGO<T>
             {
                 let val = rng.gen_range(self.lb[d]..=self.ub[d]);
                 self.Population[[p, d]]      = val;
-                self.pBest_Solution[[p, d]]  = val;
             }
         }
 
-        self.PSO_Status = AlgorithmStatus::Initialized 
+        self.SGO_Status = AlgorithmStatus::Initialized 
         {
             Population: Np,
             Dimensions: Dim,
@@ -162,7 +163,7 @@ impl<T: Debug> Initalize for SGO<T>
 
     fn is_initalized(&self) -> bool 
     {
-        return matches!(self.PSO_Status, AlgorithmStatus::Initialized { .. });
+        return matches!(self.SGO_Status, AlgorithmStatus::Initialized { .. });
     }
 }
 
@@ -171,89 +172,80 @@ impl<T: Debug> Bounding for SGO<T>
 {
     fn bound_clamp(&mut self) 
     {
-        for p in 0..self.Population_Size 
+        for d in 0..self.Dimensions 
         {
-            for d in 0..self.Dimensions 
+            let val = self.New_Solution[d];
+            if val < self.lb[d] 
             {
-                let val = self.Population[[p, d]];
-                if val < self.lb[d] 
-                {
-                    self.Population[[p, d]] = self.lb[d];
-                } else if val > self.ub[d] 
-                {
-                    self.Population[[p, d]] = self.ub[d];
-                }
+                self.Population[[p, d]] = self.lb[d];
+            } else if val > self.ub[d] 
+            {
+                self.Population[[p, d]] = self.ub[d];
             }
         }
     }
 
     fn bound_reflect(&mut self, damping_factor: f64) 
     {
-        
-        for p in 0..self.Population_Size 
+        for d in 0..self.Dimensions 
         {
-            for d in 0..self.Dimensions 
+            let val = self.New_Solution[d];
+            if val < self.lb[d] 
             {
-                let val = self.Population[[p, d]];
-                if val < self.lb[d] 
-                {
-                    self.Population[[p, d]] =
-                        self.lb[d] + (self.lb[d] - val) * damping_factor;
-                } else if val > self.ub[d] 
-                {
-                    self.Population[[p, d]] =
-                        self.ub[d] - (val - self.ub[d]) * damping_factor;
-                }
+                self.Population[[p, d]] =
+                    self.lb[d] + (self.lb[d] - val) * damping_factor;
+            } else if val > self.ub[d] 
+            {
+                self.Population[[p, d]] =
+                    self.ub[d] - (val - self.ub[d]) * damping_factor;
             }
         }
+        
     }
 
     fn bound_wrap(&mut self, overshoot_factor: f64) 
     {
-        for p in 0..self.Population_Size 
+
+        for d in 0..self.Dimensions 
         {
-            for d in 0..self.Dimensions 
+            let val = self.New_Solution[d];
+            if val < self.lb[d] 
             {
-                let val = self.Population[[p, d]];
-                if val < self.lb[d] 
-                {
-                    self.Population[[p, d]] =
-                        self.ub[d] - (self.lb[d] - val) * overshoot_factor;
-                } 
-                else if val > self.ub[d] 
-                {
-                    self.Population[[p, d]] =
-                        self.lb[d] + (val - self.ub[d]) * overshoot_factor;
-                }
+                self.Population[[p, d]] =
+                    self.ub[d] - (self.lb[d] - val) * overshoot_factor;
+            } 
+            else if val > self.ub[d] 
+            {
+                self.Population[[p, d]] =
+                    self.lb[d] + (val - self.ub[d]) * overshoot_factor;
             }
         }
+        
     }
 
     fn bound_reinitalize(&mut self) 
     {
         let mut rng = rand::thread_rng();
-        for p in 0..self.Population_Size 
+        for d in 0..self.Dimensions 
         {
-            for d in 0..self.Dimensions 
+            let val = self.New_Solution[d];
+            if val < self.lb[d] || val > self.ub[d] 
             {
-                let val = self.Population[[p, d]];
-                if val < self.lb[d] || val > self.ub[d] 
-                {
-                    self.Population[[p, d]] = rng.gen_range(self.lb[d]..=self.ub[d]);
-                }
+                self.Population[[p, d]] = rng.gen_range(self.lb[d]..=self.ub[d]);
             }
         }
-    }
+}
+    
 }
 
 
 impl<T: Debug> FitnessEvaluation for SGO<T> {
-    fn evaluate_fitness_single_population(&mut self, &dyn Problem) 
+    fn evaluate_fitness_entire_population_one_by_one(&mut self, problem: &dyn Problem) 
     {
-        for i in 0..self.Swarm_Size 
+        for i in 0..self.Population_Size 
         {
             // High-performance zero-copy row slice conversion
-            let row_view = self.Population.row(i);
+            let row_view = self.Population.row(i).into_owned();
             let slice    = row_view.as_slice().unwrap();
 
             let fitness = problem.evaluate(slice);
@@ -265,7 +257,7 @@ impl<T: Debug> FitnessEvaluation for SGO<T> {
                 self.Fitness_Scores[i] = fitness;
                 self.Population
                     .row_mut(i)
-                    .assign(&self.Population.row(i));
+                    .assign(&row_view);
             }
 
             // Update gBest
@@ -273,28 +265,25 @@ impl<T: Debug> FitnessEvaluation for SGO<T> {
             {
                 self.gBest_Score = fitness;
                 self.gBest_Solution
-                    .assign(&self.Population.row(i));
+                    .assign(&row_view);
             }
         }
     }
 
-    fn evaluate_fitness_entire_population(&mut self, problem: &dyn Problem) 
+    fn evaluate_fitness_entire_population_all_at_once(&mut self, problem: &dyn Problem) 
     {
-        unsafe 
-        {
-            // Extract raw pointers to the underlying contiguous data buffers
-            let x_ptr = self.Population.as_mut_ptr();
-            let f_ptr = self.Fitness_Scores.as_mut_ptr();
+        // Execute the batch evaluation directly on the C++ side
+        problem.evaluate_batch(&self.Population, &mut self.Fitness_Scores);
 
-            // Cast dimensions to C-compatible integers
-            let nx = self.Dimensions as c_int;
-            let mx = self.Swarm_Size as c_int;
-            let c_func_num = func_num as c_int;
+    }
 
-            // Execute the batch evaluation directly on the C++ side
-            cec19_test_func(x_ptr, f_ptr, nx, mx, c_func_num);
-        }
+    fn get_population_member_by_index(&self, pop_index: usize) -> &[f64] 
+    {
+        let dim   = self.Dimensions as usize; 
+        let start = pop_index * dim;
         
+        // Slice the full contiguous buffer directly using the calculated offsets
+        &self.Population.as_slice().unwrap()[start .. start + dim]
     }
 
     fn get_best_score(&self) -> f64 
@@ -317,7 +306,7 @@ impl<T: Debug> Optimize for SGO<T>
         // Get the gbest 
         if self.Current_Iteration == 0
         {
-            self.evaluate_fitness(problem);
+            self.evaluate_fitness_entire_population_one_by_one(problem);
             self.Function_Evaluations += self.Population_Size;
         }
         
@@ -332,23 +321,26 @@ impl<T: Debug> Optimize for SGO<T>
                 let current_member = self.Population[[p, d]];
                 let gbest_member   = self.gBest_Solution[d];
 
-                let new_vel = self.HyperParameters.Self_Instrospection_Factor * current_member
-                            + r1  (gbest_member - current_member);
+                self.New_Solution[d] = self.HyperParameters.Self_Instrospection_Factor * current_member
+                            + r1 * (gbest_member - current_member);
+
+            }
+            
+            // Apply selected Bounding Strategy
+            match self.Bounding_Strategy 
+            {
+                BoundingStrategy::Clamping          => self.bound_clamp(),
+                BoundingStrategy::Reflecting        => self.bound_reflect(0.5),
+                BoundingStrategy::Wrapping          => self.bound_wrap(1.0),
+                BoundingStrategy::ReInitialization  => self.bound_reinitalize(),
+                _ => self.bound_clamp(),
             }
         }
 
-        // Apply selected Bounding Strategy
-        match self.Bounding_Strategy 
-        {
-            BoundingStrategy::Clamping          => self.bound_clamp(),
-            BoundingStrategy::Reflecting        => self.bound_reflect(0.5),
-            BoundingStrategy::Wrapping          => self.bound_wrap(1.0),
-            BoundingStrategy::ReInitialization  => self.bound_reinitalize(),
-            _ => self.bound_clamp(),
-        }
+
 
         // Evaluate updated fitness
-        self.evaluate_fitness(problem);
+        self.evaluate_fitness_entire_population_one_by_one(problem);
         self.Function_Evaluations += self.Population_Size;
 
         // 2. ACQUIRING PHASE
@@ -357,7 +349,7 @@ impl<T: Debug> Optimize for SGO<T>
             let mut pr1 = rng.gen_range(0..self.Population_Size);
             while pr1 == p { pr1 = rng.gen_range(0..self.Population_Size); }
 
-            let x_r1 = self.population.row(pr1);
+            let x_r1 = self.Population.row(pr1);
 
             for d in 0..self.Dimensions 
             {
@@ -370,43 +362,45 @@ impl<T: Debug> Optimize for SGO<T>
                 
                 if self.Fitness_Scores[p] < self.Fitness_Scores[pr1]
                 {
-                    let new_vel = current_member
-                                + r1  (current_member - rand_member)
-                                + r2  (gbest_member - current_member);
+                    self.New_Solution[d] = current_member
+                                + r1 * (current_member - rand_member)
+                                + r2 * (gbest_member - current_member);
                 }
                 else 
                 {
-                    let new_vel = current_member
-                                + r1  (rand_member - current_member)
-                                + r2  (gbest_member - current_member);
+                    self.New_Solution[d] = current_member
+                                + r1 * (rand_member - current_member)
+                                + r2 * (gbest_member - current_member);
                 }
 
             }
+
+            // Apply selected Bounding Strategy
+            match self.Bounding_Strategy 
+            {
+                BoundingStrategy::Clamping          => self.bound_clamp(),
+                BoundingStrategy::Reflecting        => self.bound_reflect(0.5),
+                BoundingStrategy::Wrapping          => self.bound_wrap(1.0),
+                BoundingStrategy::ReInitialization  => self.bound_reinitalize(),
+                _ => self.bound_clamp(),
+            }
         }
 
-        // Apply selected Bounding Strategy
-        match self.Bounding_Strategy 
-        {
-            BoundingStrategy::Clamping          => self.bound_clamp(),
-            BoundingStrategy::Reflecting        => self.bound_reflect(0.5),
-            BoundingStrategy::Wrapping          => self.bound_wrap(1.0),
-            BoundingStrategy::ReInitialization  => self.bound_reinitalize(),
-            _ => self.bound_clamp(),
-        }
+
 
         // Evaluate updated fitness
-        self.evaluate_fitness(problem);
+        self.evaluate_fitness_entire_population_one_by_one(problem);
         self.Function_Evaluations += self.Population_Size;
 
 
         self.Current_Iteration    += 1;
         if self.Current_Iteration >= self.Total_Iterations 
         {
-            self.PSO_Status = AlgorithmStatus::Completed;
+            self.SGO_Status = AlgorithmStatus::Completed;
         } 
         else 
         {
-            self.PSO_Status = AlgorithmStatus::Running 
+            self.SGO_Status = AlgorithmStatus::Running 
             {
                 Iterations          : self.Current_Iteration,
                 FunctionEvaluations : self.Function_Evaluations,
@@ -420,11 +414,11 @@ impl<T: Debug> Optimize for SGO<T>
         {
             let dim      = problem.dimensions();
             let (lb, ub) = problem.bounds();
-            self.initialize(self.Swarm_Size, dim, lb, ub);
+            self.initialize(self.Population_Size, dim, lb, ub);
         }
 
         // Evaluate initial generation
-        self.evaluate_fitness(problem);
+        self.evaluate_fitness_entire_population_one_by_one(problem);
 
         while !self.is_done() 
         {
@@ -434,10 +428,10 @@ impl<T: Debug> Optimize for SGO<T>
 
     fn is_running(&self) -> bool 
     {
-        return matches!(self.PSO_Status, AlgorithmStatus::Running { .. });
+        return matches!(self.SGO_Status, AlgorithmStatus::Running { .. });
     }
 
     fn is_done(&self) -> bool {
-        return matches!(self.PSO_Status, AlgorithmStatus::Completed);
+        return matches!(self.SGO_Status, AlgorithmStatus::Completed);
     }
 }

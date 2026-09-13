@@ -14,6 +14,7 @@ use ndarray::{Array1, Array2};
 use rand::Rng;
 use std::fmt::Debug;
 
+
 #[derive(Debug, Clone)]
 pub struct PSO_HyperParameters 
 {
@@ -90,7 +91,6 @@ impl<T: Debug> PSO<T>
     (
         Np: usize,
         Ite: usize,
-        D: usize,
         NFEs: usize,
         CustomName: T,
         Inertia_Weight: f64,
@@ -98,6 +98,7 @@ impl<T: Debug> PSO<T>
         Social_Coefficient: f64,
         Kinetic_Energy: f64,
         Bounding_Strategy: BoundingStrategy,
+        Optimization_Problem: &dyn Problem,
     ) -> Self 
     {
         Self 
@@ -113,20 +114,20 @@ impl<T: Debug> PSO<T>
                 Kinetic_Energy,
             ),
             Bounding_Strategy       : Bounding_Strategy,
-            
-            Population      : Array2::from_elem((Np, D), f64::INFINITY),
+
+            Population      : Array2::from_elem((Np, Optimization_Problem.dimensions()), f64::INFINITY),
             Fitness_Scores  : Array1::from_elem(Np, f64::INFINITY),
-            pBest_Solution  : Array2::from_elem((Np, D), f64::INFINITY),
+            pBest_Solution  : Array2::from_elem((Np, Optimization_Problem.dimensions()), f64::INFINITY),
             pBest_Score     : Array1::from_elem(Np, f64::INFINITY),
-            gBest_Solution  : Array1::from_elem(D, f64::INFINITY),
+            gBest_Solution  : Array1::from_elem(Optimization_Problem.dimensions(), f64::INFINITY),
             gBest_Score     : f64::INFINITY,
-            Velocities      : Array2::zeros((Np, D)),
-            
-            lb: Array1::from_elem(D, f64::NEG_INFINITY),
-            ub: Array1::from_elem(D, f64::INFINITY),
+            Velocities      : Array2::zeros((Np, Optimization_Problem.dimensions())),
+
+            lb: Array1::from(Optimization_Problem.bounds().0.to_vec()),
+            ub: Array1::from(Optimization_Problem.bounds().1.to_vec()),
 
             Swarm_Size: Np,
-            Dimensions: D,
+            Dimensions: Optimization_Problem.dimensions(),
             Total_Iterations: Ite,
             Current_Iteration   : 0,
             Function_Evaluations: 0,
@@ -269,8 +270,9 @@ impl<T: Debug> Bounding for PSO<T>
     }
 }
 
-impl<T: Debug> FitnessEvaluation for PSO<T> {
-    fn evaluate_fitness_single_population(&mut self, &dyn Problem) 
+impl<T: Debug> FitnessEvaluation for PSO<T> 
+{
+    fn evaluate_fitness_entire_population_one_by_one(&mut self, problem: &dyn Problem) 
     {
         for i in 0..self.Swarm_Size 
         {
@@ -300,23 +302,20 @@ impl<T: Debug> FitnessEvaluation for PSO<T> {
         }
     }
 
-    fn evaluate_fitness_entire_population(&mut self, problem: &dyn Problem) 
+    fn evaluate_fitness_entire_population_all_at_once(&mut self, problem: &dyn Problem) 
     {
-        unsafe 
-        {
-            // Extract raw pointers to the underlying contiguous data buffers
-            let x_ptr = self.Population.as_mut_ptr();
-            let f_ptr = self.Fitness_Scores.as_mut_ptr();
+        // Execute the batch evaluation directly on the C++ side
+        problem.evaluate_batch(&self.Population, &mut self.Fitness_Scores);
 
-            // Cast dimensions to C-compatible integers
-            let nx = self.Dimensions as c_int;
-            let mx = self.Swarm_Size as c_int;
-            let c_func_num = func_num as c_int;
+    }
 
-            // Execute the batch evaluation directly on the C++ side
-            cec19_test_func(x_ptr, f_ptr, nx, mx, c_func_num);
-        }
+    fn get_population_member_by_index(&self, pop_index: usize) -> &[f64] 
+    {
+        let dim   = self.Dimensions as usize; 
+        let start = pop_index * dim;
         
+        // Slice the full contiguous buffer directly using the calculated offsets
+        &self.Population.as_slice().unwrap()[start .. start + dim]
     }
 
     fn get_best_score(&self) -> f64 
@@ -347,7 +346,7 @@ impl<T: Debug> Optimize for PSO<T>
                 let current_vel = self.Velocities[[p, d]];
                 let pos         = self.Population[[p, d]];
                 let pbest_pos   = self.pBest_Solution[[p, d]];
-                let gbest_pos   = self.gBest_Solution[[p, d]];
+                let gbest_pos   = self.gBest_Solution[d];
 
                 let mut new_vel = self.HyperParameters.Inertia_Weight * current_vel
                                 + self.HyperParameters.Cognitive_Coefficient * r1 * (pbest_pos - pos)
@@ -381,7 +380,7 @@ impl<T: Debug> Optimize for PSO<T>
         }
 
         // Evaluate updated fitness
-        self.evaluate_fitness(problem);
+        self.evaluate_fitness_entire_population_one_by_one(problem);
 
         self.Current_Iteration    += 1;
         self.Function_Evaluations += self.Swarm_Size;
@@ -410,7 +409,7 @@ impl<T: Debug> Optimize for PSO<T>
         }
 
         // Evaluate initial generation
-        self.evaluate_fitness(problem);
+        self.evaluate_fitness_entire_population_one_by_one(problem);
 
         while !self.is_done() 
         {
