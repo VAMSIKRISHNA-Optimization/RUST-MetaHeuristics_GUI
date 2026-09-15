@@ -121,6 +121,10 @@ pub trait FitnessEvaluation
     fn get_best_score(&self) -> f64;
 }
 
+pub trait GreedySelection
+{
+    fn greedy_selection(&mut self, new_fitness: f64, current_fitness: f64, pop_ind: usize);
+}
 
 pub trait Optimize: Initalize + Bounding + FitnessEvaluation
 {

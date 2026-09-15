@@ -8,6 +8,7 @@ use crate::algorithm_structure::
     CustomName, 
     FitnessEvaluation, 
     Initalize, Optimize,
+    GreedySelection,
 };
 use crate::core::problem::Problem;
 use ndarray::{Array1, Array2};
@@ -65,8 +66,9 @@ pub struct SGO<T: Debug>
     lb: Array1<f64>,
     ub: Array1<f64>,
 
-    Population_Size : usize,
-    Dimensions      : usize,
+    Population_Size  : usize,
+    Population_Index : usize,
+    Dimensions       : usize,
 
     Total_Iterations    : usize,
     Current_Iteration   : usize,
@@ -111,6 +113,7 @@ impl<T: Debug> SGO<T>
             ub: Array1::from_elem(Optimization_Problem.dimensions(), f64::INFINITY),
 
             Population_Size : Np,
+            Population_Index: 0,
             Dimensions      : Optimization_Problem.dimensions(),
 
             Total_Iterations    : Ite,
@@ -177,10 +180,10 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] 
             {
-                self.Population[[p, d]] = self.lb[d];
+                self.Population[[self.Population_Index, d]] = self.lb[d];
             } else if val > self.ub[d] 
             {
-                self.Population[[p, d]] = self.ub[d];
+                self.Population[[self.Population_Index, d]] = self.ub[d];
             }
         }
     }
@@ -192,11 +195,11 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] 
             {
-                self.Population[[p, d]] =
+                self.Population[[self.Population_Index, d]] =
                     self.lb[d] + (self.lb[d] - val) * damping_factor;
             } else if val > self.ub[d] 
             {
-                self.Population[[p, d]] =
+                self.Population[[self.Population_Index, d]] =
                     self.ub[d] - (val - self.ub[d]) * damping_factor;
             }
         }
@@ -211,12 +214,12 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] 
             {
-                self.Population[[p, d]] =
+                self.Population[[self.Population_Index, d]] =
                     self.ub[d] - (self.lb[d] - val) * overshoot_factor;
             } 
             else if val > self.ub[d] 
             {
-                self.Population[[p, d]] =
+                self.Population[[self.Population_Index, d]] =
                     self.lb[d] + (val - self.ub[d]) * overshoot_factor;
             }
         }
@@ -231,7 +234,7 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] || val > self.ub[d] 
             {
-                self.Population[[p, d]] = rng.gen_range(self.lb[d]..=self.ub[d]);
+                self.Population[[self.Population_Index, d]] = rng.gen_range(self.lb[d]..=self.ub[d]);
             }
         }
 }
@@ -239,7 +242,8 @@ impl<T: Debug> Bounding for SGO<T>
 }
 
 
-impl<T: Debug> FitnessEvaluation for SGO<T> {
+impl<T: Debug> FitnessEvaluation for SGO<T> 
+{
     fn evaluate_fitness_entire_population_one_by_one(&mut self, problem: &dyn Problem) 
     {
         for i in 0..self.Population_Size 
@@ -251,14 +255,14 @@ impl<T: Debug> FitnessEvaluation for SGO<T> {
             let fitness = problem.evaluate(slice);
             self.Fitness_Scores[i] = fitness;
 
-            // Greedy selection
-            if fitness < self.Fitness_Scores[i]
-            {
-                self.Fitness_Scores[i] = fitness;
-                self.Population
-                    .row_mut(i)
-                    .assign(&row_view);
-            }
+            // // Greedy selection
+            // if fitness < self.Fitness_Scores[i]
+            // {
+            //     self.Fitness_Scores[i] = fitness;
+            //     self.Population
+            //         .row_mut(i)
+            //         .assign(&row_view);
+            // }
 
             // Update gBest
             if fitness < self.gBest_Score 
@@ -286,6 +290,11 @@ impl<T: Debug> FitnessEvaluation for SGO<T> {
         &self.Population.as_slice().unwrap()[start .. start + dim]
     }
 
+    fn evaluate_single_population_member(&self, problem: &dyn Problem, pop_index: usize) -> f64
+    {
+        problem.evaluate(self.get_population_member_by_index(pop_index))
+    }
+
     fn get_best_score(&self) -> f64 
     {
         self.gBest_Score
@@ -296,6 +305,34 @@ impl<T: Debug> FitnessEvaluation for SGO<T> {
         self.gBest_Solution.as_slice().unwrap()
     }
 }
+
+
+impl <T: Debug> GreedySelection for SGO<T> 
+{
+    fn greedy_selection(&mut self, new_fitness: f64, current_fitness: f64, pop_ind: usize)
+    {
+        // Update the population member if the new fitness is better
+        if new_fitness < current_fitness 
+        {
+            self.Fitness_Scores[pop_ind] = new_fitness;
+                self.Population
+                    .row_mut(pop_ind)
+                    .assign(&self.New_Solution);
+        } 
+
+        // Update gBest
+        if new_fitness < self.gBest_Score 
+        {
+            self.gBest_Score = new_fitness;
+            self.gBest_Solution
+                .assign(&self.New_Solution);
+        }
+
+    }
+
+
+}
+
 
 impl<T: Debug> Optimize for SGO<T> 
 {
@@ -310,6 +347,7 @@ impl<T: Debug> Optimize for SGO<T>
             self.Function_Evaluations += self.Population_Size;
         }
         
+        self.Population_Index = 0;
 
         // 1. IMPROVING PHASE
         for p in 0..self.Population_Size 
@@ -335,6 +373,12 @@ impl<T: Debug> Optimize for SGO<T>
                 BoundingStrategy::ReInitialization  => self.bound_reinitalize(),
                 _ => self.bound_clamp(),
             }
+
+            let new_fitness = problem.evaluate(self.New_Solution.as_slice().unwrap());
+
+            self.greedy_selection(new_fitness, self.Fitness_Scores[p], p);
+            self.Population_Index += 1;
+        
         }
 
 
@@ -342,10 +386,12 @@ impl<T: Debug> Optimize for SGO<T>
         // Evaluate updated fitness
         self.evaluate_fitness_entire_population_one_by_one(problem);
         self.Function_Evaluations += self.Population_Size;
+        self.Population_Index = 0;
 
         // 2. ACQUIRING PHASE
         for p in 0..self.Population_Size 
         {
+            
             let mut pr1 = rng.gen_range(0..self.Population_Size);
             while pr1 == p { pr1 = rng.gen_range(0..self.Population_Size); }
 
@@ -384,12 +430,15 @@ impl<T: Debug> Optimize for SGO<T>
                 BoundingStrategy::ReInitialization  => self.bound_reinitalize(),
                 _ => self.bound_clamp(),
             }
+
+            let new_fitness = problem.evaluate(self.New_Solution.as_slice().unwrap());
+
+            self.greedy_selection(new_fitness, self.Fitness_Scores[p], p);
+            
+            self.Population_Index += 1;
         }
 
-
-
         // Evaluate updated fitness
-        self.evaluate_fitness_entire_population_one_by_one(problem);
         self.Function_Evaluations += self.Population_Size;
 
 
@@ -414,6 +463,7 @@ impl<T: Debug> Optimize for SGO<T>
         {
             let dim      = problem.dimensions();
             let (lb, ub) = problem.bounds();
+            self.Population_Index = 0;
             self.initialize(self.Population_Size, dim, lb, ub);
         }
 
