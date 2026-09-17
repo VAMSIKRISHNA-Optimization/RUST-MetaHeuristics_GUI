@@ -18,16 +18,16 @@ use std::fmt::Debug;
 #[derive(Debug, Clone)]
 pub struct SGO_HyperParameters 
 {
-    Self_Instrospection_Factor : f64,
+    Self_Introspection_Factor : f64,
 }
 
 impl SGO_HyperParameters 
 {
-    pub fn new(Self_Instrospection_Factor: f64) -> Self 
+    pub fn new(Self_Introspection_Factor: f64) -> Self 
     {
         Self 
         {
-            Self_Instrospection_Factor,
+            Self_Introspection_Factor,
         }
     }
 }
@@ -39,7 +39,7 @@ impl Default for SGO_HyperParameters
         // Suresh Satapathy & Anima Naik, 2016
         Self 
         {
-            Self_Instrospection_Factor  : 0.2,
+            Self_Introspection_Factor  : 0.2,
         }
     }
 }
@@ -109,8 +109,8 @@ impl<T: Debug> SGO<T>
 
             New_Solution : Array1::from_elem(Optimization_Problem.dimensions(), f64::INFINITY),
 
-            lb: Array1::from_elem(Optimization_Problem.dimensions(), f64::NEG_INFINITY),
-            ub: Array1::from_elem(Optimization_Problem.dimensions(), f64::INFINITY),
+            lb: Array1::from(Optimization_Problem.bounds().0.to_vec()),
+            ub: Array1::from(Optimization_Problem.bounds().1.to_vec()),
 
             Population_Size : Np,
             Population_Index: 0,
@@ -122,6 +122,11 @@ impl<T: Debug> SGO<T>
             Total_Function_Evaluations: NFEs,
         }
     }
+
+    pub fn get_current_iteration(&self) -> usize 
+    {
+        self.Current_Iteration
+    }
 }
 
 
@@ -131,6 +136,7 @@ impl<T: Debug> Initalize for SGO<T>
     {
         assert_eq!(lb.len(), Dim, "Length of lb must match Dimensions");
         assert_eq!(ub.len(), Dim, "Length of ub must match Dimensions");
+        assert!(self.Population_Size > 1, "Population size must be at least 2 for SGO");
 
         self.Population_Size = Np;
         self.Dimensions      = Dim;
@@ -180,10 +186,10 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] 
             {
-                self.Population[[self.Population_Index, d]] = self.lb[d];
+                self.New_Solution[d] = self.lb[d];
             } else if val > self.ub[d] 
             {
-                self.Population[[self.Population_Index, d]] = self.ub[d];
+                self.New_Solution[d] = self.ub[d];
             }
         }
     }
@@ -195,12 +201,10 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] 
             {
-                self.Population[[self.Population_Index, d]] =
-                    self.lb[d] + (self.lb[d] - val) * damping_factor;
+                self.New_Solution[d] = self.lb[d] + (self.lb[d] - val) * damping_factor;
             } else if val > self.ub[d] 
             {
-                self.Population[[self.Population_Index, d]] =
-                    self.ub[d] - (val - self.ub[d]) * damping_factor;
+                self.New_Solution[d] = self.ub[d] - (val - self.ub[d]) * damping_factor;
             }
         }
         
@@ -214,12 +218,12 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] 
             {
-                self.Population[[self.Population_Index, d]] =
+                self.New_Solution[d] =
                     self.ub[d] - (self.lb[d] - val) * overshoot_factor;
             } 
             else if val > self.ub[d] 
             {
-                self.Population[[self.Population_Index, d]] =
+                self.New_Solution[d] =
                     self.lb[d] + (val - self.ub[d]) * overshoot_factor;
             }
         }
@@ -234,7 +238,7 @@ impl<T: Debug> Bounding for SGO<T>
             let val = self.New_Solution[d];
             if val < self.lb[d] || val > self.ub[d] 
             {
-                self.Population[[self.Population_Index, d]] = rng.gen_range(self.lb[d]..=self.ub[d]);
+                self.New_Solution[d] = rng.gen_range(self.lb[d]..=self.ub[d]);
             }
         }
 }
@@ -283,11 +287,16 @@ impl<T: Debug> FitnessEvaluation for SGO<T>
 
     fn get_population_member_by_index(&self, pop_index: usize) -> &[f64] 
     {
-        let dim   = self.Dimensions as usize; 
-        let start = pop_index * dim;
+        // let dim   = self.Dimensions as usize; 
+        // let start = pop_index * dim;
         
-        // Slice the full contiguous buffer directly using the calculated offsets
-        &self.Population.as_slice().unwrap()[start .. start + dim]
+        // // Slice the full contiguous buffer directly using the calculated offsets
+        // &self.Population.as_slice().unwrap()[start .. start + dim]
+
+        self.Population
+        .row(pop_index)
+        .to_slice()
+        .expect("Row is not contiguous in memory")
     }
 
     fn evaluate_single_population_member(&self, problem: &dyn Problem, pop_index: usize) -> f64
@@ -359,8 +368,8 @@ impl<T: Debug> Optimize for SGO<T>
                 let current_member = self.Population[[p, d]];
                 let gbest_member   = self.gBest_Solution[d];
 
-                self.New_Solution[d] = self.HyperParameters.Self_Instrospection_Factor * current_member
-                            + r1 * (gbest_member - current_member);
+                self.New_Solution[d] = self.HyperParameters.Self_Introspection_Factor * current_member
+                                     + r1 * (gbest_member - current_member);
 
             }
             
@@ -377,15 +386,12 @@ impl<T: Debug> Optimize for SGO<T>
             let new_fitness = problem.evaluate(self.New_Solution.as_slice().unwrap());
 
             self.greedy_selection(new_fitness, self.Fitness_Scores[p], p);
-            self.Population_Index += 1;
+            self.Population_Index     += 1;
+            self.Function_Evaluations += 1;
         
         }
 
-
-
-        // Evaluate updated fitness
-        self.evaluate_fitness_entire_population_one_by_one(problem);
-        self.Function_Evaluations += self.Population_Size;
+        
         self.Population_Index = 0;
 
         // 2. ACQUIRING PHASE
@@ -434,12 +440,11 @@ impl<T: Debug> Optimize for SGO<T>
             let new_fitness = problem.evaluate(self.New_Solution.as_slice().unwrap());
 
             self.greedy_selection(new_fitness, self.Fitness_Scores[p], p);
-            
-            self.Population_Index += 1;
+
+            self.Function_Evaluations   += 1;
+            self.Population_Index       += 1;
         }
 
-        // Evaluate updated fitness
-        self.Function_Evaluations += self.Population_Size;
 
 
         self.Current_Iteration    += 1;
@@ -466,9 +471,6 @@ impl<T: Debug> Optimize for SGO<T>
             self.Population_Index = 0;
             self.initialize(self.Population_Size, dim, lb, ub);
         }
-
-        // Evaluate initial generation
-        self.evaluate_fitness_entire_population_one_by_one(problem);
 
         while !self.is_done() 
         {

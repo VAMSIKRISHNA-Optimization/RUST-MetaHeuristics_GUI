@@ -9,8 +9,8 @@ fn main()
 {
     println!("cargo:rerun-if-changed=c_src/CEC2019 Benchmark Suite/cec19_func.cpp");
 
-    cc::Build::new()
-                .cpp(true) // Explicitly compile as C++
-                .file("c_src/CEC2019 Benchmark Suite/cec19_func.cpp")
-                .compile("cec19"); // This generates libcec19.a
+    // cc::Build::new()
+    //             .cpp(true) // Explicitly compile as C++
+    //             .file("c_src/CEC2019 Benchmark Suite/cec19_func.cpp")
+    //             .compile("cec19"); // This generates libcec19.a
 }

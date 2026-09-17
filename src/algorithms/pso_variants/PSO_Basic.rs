@@ -134,6 +134,11 @@ impl<T: Debug> PSO<T>
             Total_Function_Evaluations: NFEs,
         }
     }
+
+    pub fn get_current_iteration(&self) -> usize 
+    {
+        self.Current_Iteration
+    }
 }
 
 impl<T: Debug> Initalize for PSO<T> 
@@ -142,6 +147,7 @@ impl<T: Debug> Initalize for PSO<T>
     {
         assert_eq!(lb.len(), Dim, "Length of lb must match Dimensions");
         assert_eq!(ub.len(), Dim, "Length of ub must match Dimensions");
+      
 
         self.Swarm_Size = Np;
         self.Dimensions = Dim;
@@ -311,11 +317,16 @@ impl<T: Debug> FitnessEvaluation for PSO<T>
 
     fn get_population_member_by_index(&self, pop_index: usize) -> &[f64] 
     {
-        let dim   = self.Dimensions as usize; 
-        let start = pop_index * dim;
+        // let dim   = self.Dimensions as usize; 
+        // let start = pop_index * dim;
         
-        // Slice the full contiguous buffer directly using the calculated offsets
-        &self.Population.as_slice().unwrap()[start .. start + dim]
+        // // Slice the full contiguous buffer directly using the calculated offsets
+        // &self.Population.as_slice().unwrap()[start .. start + dim]
+
+        self.Population
+        .row(pop_index)
+        .to_slice()
+        .expect("Row is not contiguous in memory")
     }
 
     fn get_best_score(&self) -> f64 
@@ -333,6 +344,12 @@ impl<T: Debug> Optimize for PSO<T>
 {
     fn step(&mut self, problem: &dyn Problem) 
     {
+        if self.Current_Iteration == 0 
+        {
+            self.evaluate_fitness_entire_population_one_by_one(problem);
+            self.Function_Evaluations += self.Swarm_Size;
+        }
+
         let mut rng = rand::thread_rng();
 
         // Update velocities and positions
@@ -410,6 +427,7 @@ impl<T: Debug> Optimize for PSO<T>
 
         // Evaluate initial generation
         self.evaluate_fitness_entire_population_one_by_one(problem);
+        self.Function_Evaluations += self.Swarm_Size;
 
         while !self.is_done() 
         {

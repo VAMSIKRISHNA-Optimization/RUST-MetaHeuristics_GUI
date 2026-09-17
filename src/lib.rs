@@ -8,6 +8,7 @@ pub mod benchmarks;
 pub mod core;
 pub mod execution;
 pub mod gui;
+pub mod tests;
 
 pub const DEFAULT_POPULATION_SIZE: usize = 50;
 pub const DEFAULT_ITERATIONS     : usize = 500;
