@@ -1,0 +1,20 @@
+# .cargo/config.toml
+
+# 1. Default Environment Variables
+[env]
+RUST_LOG = "info"                 # Automatically enables logging for GUI / tracing
+# WGPU_BACKEND = "vulkan"         # Optional: Force graphics backend (vulkan, dx12, metal)
+
+# 2. Custom Cargo Command Shortcuts
+[alias]
+gui = "run --bin gui"                               # 'cargo gui' runs your main GUI binary
+test-cec = "test --test integration_tests -- --nocapture" # 'cargo test-cec' runs benchmark tests with logs
+
+# 3. Optional: Fast Linking for Iterative GUI Rebuilds (Windows)
+# Un-comment if you have LLD installed via LLVM or VS Build Tools
+#[target.x86_64-pc-windows-msvc]
+#rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+# Optional: Fast Linking for Linux
+#[target.x86_64-unknown-linux-gnu]
+#rustflags = ["-C", "link-arg=-fuse-ld=mold"]
