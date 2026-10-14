@@ -1,13 +1,27 @@
+use std::env;
+use std::path::PathBuf;
+
 fn main() 
 {
-    // Re-run this build script only if the C++ sources change
     println!("cargo:rerun-if-changed=c_src/");
 
-    // Automatically compile C++ code into cec19.lib
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    let c_file_path = manifest_dir
+        .join("c_src")
+        .join("CEC2019 Benchmark Suite")
+        .join("cec19_func.cpp");
+
+    assert!(
+        c_file_path.exists(),
+        "Could not find C++ benchmark file at: {:?}",
+        c_file_path
+    );
+
     cc::Build::new()
         .cpp(true)
-        // Ensure this path matches the exact location of cec19_func.cpp in your c_src directory
-        .file("c_src/CEC2019 Benchmark/cec19_func.cpp") 
+        .define("WINDOWS", None) // Replicates -DWINDOWS from the original instructions
+        .file(c_file_path)
         .warnings(false)
-        .compile("cec19"); // Generates and links cec19.lib automatically
+        .compile("cec19");
 }

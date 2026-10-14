@@ -90,6 +90,7 @@ impl<T: Debug> SGO<T>
         Optimization_Problem: &dyn Problem,
     ) -> Self 
     {
+        assert!(Np >= 2, "Population size must be at least 2");
         Self 
         {
             SGO_Status              : AlgorithmStatus::Not_Initialized,

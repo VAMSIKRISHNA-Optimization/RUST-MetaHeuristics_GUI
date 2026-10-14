@@ -210,9 +210,11 @@ impl<T: Debug> Bounding for PSO<T>
                 if val < self.lb[d] 
                 {
                     self.Population[[p, d]] = self.lb[d];
+                    self.Velocities[[p, d]] = 0.0; // Reset outward velocity
                 } else if val > self.ub[d] 
                 {
                     self.Population[[p, d]] = self.ub[d];
+                    self.Velocities[[p, d]] = 0.0; // Reset outward velocity
                 }
             }
         }
@@ -344,6 +346,15 @@ impl<T: Debug> Optimize for PSO<T>
 {
     fn step(&mut self, problem: &dyn Problem) 
     {
+        if !self.is_initalized() 
+        {
+            let dim = problem.dimensions();
+            let (lb, ub) = problem.bounds();
+            self.initialize(self.Swarm_Size, dim, lb, ub);
+            self.evaluate_fitness_entire_population_one_by_one(problem);
+            self.Function_Evaluations += self.Swarm_Size;
+        }
+
         if self.Current_Iteration == 0 
         {
             self.evaluate_fitness_entire_population_one_by_one(problem);

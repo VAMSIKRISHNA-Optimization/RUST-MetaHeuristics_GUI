@@ -12,7 +12,7 @@ test-cec = "test --test integration_tests -- --nocapture" # 'cargo test-cec' run
 
 # 3. Optional: Fast Linking for Iterative GUI Rebuilds (Windows)
 # Un-comment if you have LLD installed via LLVM or VS Build Tools
-#[target.x86_64-pc-windows-msvc]
+[target.x86_64-pc-windows-msvc]
 #rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 # Optional: Fast Linking for Linux

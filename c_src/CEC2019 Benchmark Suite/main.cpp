@@ -10,7 +10,7 @@
 #include <malloc.h>
 
 
-void cec17_test_func(double *, double *,int,int,int);
+void cec19_test_func(double *, double *,int,int,int);
 
 double *OShift,*M,*y,*z,*x_bound;
 int ini_flag=0,n_flag,func_flag,*SS;

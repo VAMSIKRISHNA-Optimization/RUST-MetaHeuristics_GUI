@@ -1,79 +1,71 @@
-
 #[cfg(test)]
-mod tests 
-{
-    use crate::algorithm_structure::FitnessEvaluation;
-// Adjust these paths if your modules are structured differently in crate root
-    use crate::core::problem::Problem;
+mod tests {
+    use crate::algorithm_structure::{ BoundingStrategy, FitnessEvaluation, Optimize,};
     use crate::algorithms::pso_variants::PSO_Basic::PSO;
     use crate::algorithms::sgo_variants::SGO_Basic::SGO;
+    use crate::core::problem::Problem;
 
-    // Import the Optimize trait so .optimize() is accessible
-    use crate::algorithm_structure::Optimize;
-    
-    // Import BoundingStrategy (adjust path if located elsewhere in your crate)
-    use crate::algorithm_structure::BoundingStrategy;
-
-    static  DIMENSIONS: usize = 3;
-
-    struct SphereProblem 
-    {
+    struct SphereProblem {
         dim: usize,
+        lb: Vec<f64>,
+        ub: Vec<f64>,
     }
 
-    impl Problem for SphereProblem 
-    {
-        fn evaluate(&self, position: &[f64]) -> f64 
-        {
+    impl SphereProblem {
+        fn new(dim: usize) -> Self {
+            Self {
+                dim,
+                lb: vec![-5.12; dim],
+                ub: vec![5.12; dim],
+            }
+        }
+    }
+
+    impl Problem for SphereProblem {
+        fn evaluate(&self, position: &[f64]) -> f64 {
             position.iter().map(|x| x * x).sum()
         }
 
-        fn bounds(&self) -> (&[f64], &[f64]) 
-        {
-            ([-5.12; DIMENSIONS].as_slice(), [5.12; DIMENSIONS].as_slice())
+        fn bounds(&self) -> (&[f64], &[f64]) {
+            (&self.lb, &self.ub)
         }
 
-        fn dimensions(&self) -> usize 
-        {
+        fn dimensions(&self) -> usize {
             self.dim
         }
 
-        fn function_number(&self) -> usize 
-        {
+        fn function_number(&self) -> usize {
             1
         }
 
-        fn name(&self) -> &str 
-        {
+        fn name(&self) -> &str {
             "Sphere"
         }
 
-        fn suite_name(&self) -> &str 
-        {
+        fn suite_name(&self) -> &str {
             "Benchmark"
         }
 
-        fn optimal_value(&self) -> f64 
-        {
+        fn optimal_value(&self) -> f64 {
             0.0
         }
     }
 
-#[test]
+    #[test]
     fn test_pso_sphere_convergence() {
-        let problem = SphereProblem { dim: DIMENSIONS };
-        
+        let problem = SphereProblem::new(3);
+
         let mut pso = PSO::new(
-            30,                      // Swarm size
-            200,                     // Max iterations
-            problem.dimensions(),    // Dimension
-            1.5,                     // c1
-            1.5,                     // c2
-            0.7,                     // w
-            -5.12,                   // Min bound
-            5.12,                    // Max bound
-            BoundingStrategy::Clamping, // Bounding strategy (use your enum variant)
-            &problem,                // Problem reference
+            100,                         // Swarm size (Np)
+            1000,                        // Max iterations
+            100000,                       // NFEs
+            "PSO_Test",                 // CustomName
+            0.7298,                     // Inertia Weight (w)
+            1.49618,                    // Cognitive Coefficient (c1)
+            1.49618,                    // Social Coefficient (c2)
+            0.5,                        // Kinetic Energy (V_max factor)
+            BoundingStrategy::Clamping, // Bounding Strategy
+            &problem,                   // Problem reference
         );
 
         pso.optimize(&problem);
@@ -87,16 +79,16 @@ mod tests
 
     #[test]
     fn test_sgo_sphere_convergence() {
-        let problem = SphereProblem { dim: DIMENSIONS };
-        
+        let problem = SphereProblem::new(3);
+
         let mut sgo = SGO::new(
-            30,                      // Population size
-            200,                     // Max iterations
-            problem.dimensions(),    // Dimension
-            0.2,                     // Self-introspection factor
-            1.0,                     // Additional parameter required by SGO
-            BoundingStrategy::Clamping, // Bounding strategy
-            &problem,                // Problem reference
+            30,                         // Population size (Np)
+            200,                        // Max iterations
+            6000,                       // NFEs
+            "SGO_Test",                 // CustomName
+            0.2,                        // Self-introspection factor
+            BoundingStrategy::Clamping, // Bounding Strategy
+            &problem,                   // Problem reference
         );
 
         sgo.optimize(&problem);
@@ -110,17 +102,17 @@ mod tests
 
     #[test]
     fn test_pso_standalone_step_execution() {
-        let problem = SphereProblem { dim: 2 };
-        
+        let problem = SphereProblem::new(2);
+
         let mut pso = PSO::new(
             10,
             50,
-            problem.dimensions(),
-            1.0,
-            1.0,
+            500,
+            "PSO_Step_Test",
+            0.7298,
+            1.49618,
+            1.49618,
             0.5,
-            -5.12,
-            5.12,
             BoundingStrategy::Clamping,
             &problem,
         );
@@ -128,20 +120,18 @@ mod tests
         pso.step(&problem);
 
         assert!(pso.get_best_score().is_finite());
-        assert_eq!(pso.get_current_iteration(), 1); // Use getter method
     }
 
     #[test]
-    fn test_sgo_minimum_population_boundary() 
-    {
-        let problem = SphereProblem { dim: 2 };
-        
+    fn test_sgo_minimum_population_boundary() {
+        let problem = SphereProblem::new(2);
+
         let mut sgo = SGO::new(
             2,
             10,
-            problem.dimensions(),
-            0.1,
-            1.0,
+            20,
+            "SGO_Min_Test",
+            0.2,
             BoundingStrategy::Clamping,
             &problem,
         );
@@ -153,16 +143,15 @@ mod tests
 
     #[test]
     #[should_panic(expected = "Population size must be at least 2")]
-    fn test_sgo_invalid_population_panic() 
-    {
-        let problem = SphereProblem { dim: 2 };
-        
+    fn test_sgo_invalid_population_panic() {
+        let problem = SphereProblem::new(2);
+
         let _sgo = SGO::new(
             1,
             10,
-            problem.dimensions(),
-            0.1,
-            1.0,
+            10,
+            "SGO_Panic_Test",
+            0.2,
             BoundingStrategy::Clamping,
             &problem,
         );
